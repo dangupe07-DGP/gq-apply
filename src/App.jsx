@@ -236,7 +236,18 @@ const Step4 = memo(({ f, set }) => {
             style={{ marginTop:3, width:22, height:22, cursor:"pointer", flexShrink:0, accentColor:"#1b2a4a" }} />
           <span style={{ fontSize:13, color:"#475569", lineHeight:1.7 }}>
             I confirm all information is accurate. I consent to G&Q Properties verifying my details, contacting my references, and storing my data to process this application.
-')`}</style>
+          </span>
+        </label>
+      </div>
+    </div>
+  );
+});
+
+// ── Success screen ────────────────────────────────────────
+function SuccessScreen({ name, email, ref, house }) {
+  return (
+    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#1b2a4a,#2d4a6e)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"'DM Sans',sans-serif" }}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Serif+Display&display=swap')`}</style>
       <div style={{ background:"#fff", borderRadius:24, padding:"48px 36px", maxWidth:480, width:"100%", textAlign:"center", boxShadow:"0 24px 64px rgba(0,0,0,0.3)" }}>
         <div style={{ width:96, height:96, borderRadius:"50%", background:"#dcfce7", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px", fontSize:56 }}>✅</div>
         <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:30, color:"#1b2a4a", marginBottom:10 }}>Application Submitted!</div>
@@ -296,7 +307,7 @@ export default function ApplicationForm() {
 
   return (
     <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#1b2a4a,#2d4a6e)", fontFamily:"'DM Sans',sans-serif", padding:"20px 16px 48px" }}>
-');*{box-sizing:border-box}`}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Serif+Display&display=swap');*{box-sizing:border-box}`}</style>
       <div style={{ maxWidth:620, margin:"0 auto" }}>
 
         {/* Header */}
@@ -358,16 +369,3 @@ export default function ApplicationForm() {
     </div>
   );
 }
-      <style>{`@import url('
-          </span>
-        </label>
-      </div>
-    </div>
-  );
-});
-
-// ── Success screen ────────────────────────────────────────
-function SuccessScreen({ name, email, ref, house }) {
-  return (
-    <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#1b2a4a,#2d4a6e)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"'DM Sans',sans-serif" }}>
-      <style>{`@import url('
