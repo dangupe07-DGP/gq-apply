@@ -1,6 +1,9 @@
 // ============================================================
 // G&Q Properties - Room Application Form
-// VERSION 3.0  —  Saved: 04 June 2026
+// VERSION 3.2  —  Saved: 10 October 2026
+// v3.2: applicants upload their documents (photo ID, proof of income…) in
+//       the form itself (new 'Documents' step). Files go to the private
+//       Supabase storage bucket 'application-docs' (only G&Q staff can open them).
 // ============================================================
 // What's new in v2.0 (since v1.0):
 //  • Built-in applicant form (embedded in manager)
@@ -20,7 +23,7 @@
 //  • Company branding with logo upload
 //  • 3-row navy header (G&Q navy/gold theme)
 // ============================================================
-import { useState, useCallback, memo, useEffect } from "react";
+import { useState, useCallback, memo, useEffect, useRef } from "react";
 // ── Supabase v3.0 ─────────────────────────────────────────
 const SB_URL = "https://nxkndyiifyptwhvqljqy.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54a25keWlpZnlwdHdodnFsanF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NzUxNzYsImV4cCI6MjA5NjE1MTE3Nn0.pmg7SxeI0617dteBq3Hk8mDSbyMHSPbLAZKpoGIZcjo";
@@ -36,6 +39,25 @@ async function sbUpsertApp(app) {
     body: JSON.stringify({ id:app.id, data:app, status:"pending" })
   });
   if (!r.ok) throw new Error(await r.text());
+}
+// v3.2: upload one document to the private bucket "application-docs".
+// The public form can only ADD files (it cannot see, list or replace them).
+async function sbUploadDoc(path, blob, contentType) {
+  const r = await fetch(SB_URL + "/storage/v1/object/application-docs/" + path, {
+    method: "POST",
+    headers: {
+      "apikey": SB_KEY,
+      "Authorization": "Bearer " + SB_KEY,
+      "Content-Type": contentType || "application/octet-stream",
+      "x-upsert": "false",
+    },
+    body: blob,
+  });
+  if (!r.ok) {
+    const t = await r.text();
+    if (/already exists|Duplicate/i.test(t)) return; // uploaded on an earlier try
+    throw new Error(t || ("Upload failed (" + r.status + ")"));
+  }
 }
 // ── End Supabase ──────────────────────────────────────────
 
@@ -77,7 +99,53 @@ const HOUSES = [
   { id:"h3", address:"23 Silica Rd, Wattle Grove 6107, WA" },
 ];
 
-const STEPS = ["Your Details","Co-Tenant","Room & Dates","Employment","Review & Submit"];
+const STEPS = ["Your Details","Co-Tenant","Room & Dates","Employment","Documents","Review & Submit"];
+
+// ── Documents (v3.2) ─────────────────────────────────────
+const MAX_FILE_MB = 10;
+const MAX_FILES_PER_TYPE = 5;
+const ACCEPT = "image/*,application/pdf,.pdf,.heic,.heif";
+function docTypes(f) {
+  return [
+    { key:"id", label:"Your Photo ID", req:true, hint:"Driver licence (front and back) or passport photo page." },
+    { key:"income", label:"Proof of Income", req:true, hint:"Your latest payslip(s). No payslips? A recent bank statement, Centrelink letter or student enrolment letter is fine." },
+    ...(f.hasT2 ? [{ key:"t2id", label:"Co-Tenant Photo ID", req:true, hint:`Photo ID for ${f.t2name || "your co-tenant"}.` }] : []),
+    { key:"other", label:"Other Documents (optional)", req:false, hint:"Rental references, co-tenant payslips, or anything else that supports your application." },
+  ];
+}
+function missingDocs(f) {
+  return docTypes(f).filter(d => d.req && !((f.files||{})[d.key]||[]).length);
+}
+function fileSizeText(n) { return n >= 1048576 ? (n/1048576).toFixed(1)+" MB" : Math.max(1, Math.round(n/1024))+" KB"; }
+function isPdf(file) { return file.type === "application/pdf" || /\.pdf$/i.test(file.name); }
+
+// Phone photos can be very large. Shrink JPEG/PNG/WebP photos to max 2000 px
+// (as a JPEG) before uploading. Anything else (PDF, HEIC) is sent as it is.
+function shrinkImage(file) {
+  return new Promise((resolve) => {
+    if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return resolve(file);
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, 2000 / Math.max(img.width, img.height));
+      if (scale === 1 && file.size < 1.5 * 1048576) return resolve(file);
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.width * scale); c.height = Math.round(img.height * scale);
+      const ctx = c.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      c.toBlob(b => resolve(b && b.size < file.size ? new File([b], file.name.replace(/\.\w+$/, "") + ".jpg", { type:"image/jpeg" }) : file), "image/jpeg", 0.85);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+function safeFileName(name) {
+  const m = String(name || "file").match(/^(.*?)(\.[A-Za-z0-9]{1,5})?$/);
+  const base = (m[1] || "file").normalize("NFKD").replace(/[^A-Za-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) || "file";
+  return base + (m[2] || "").toLowerCase();
+}
 
 const inp = {
   width:"100%", border:"1.5px solid #e2e8f0", borderRadius:10,
@@ -108,6 +176,7 @@ function empty() {
     t1employer:"", t1jobTitle:"", t1income:"", t1employmentType:"full-time",
     prevAddress:"", prevLandlordPhone:"", references:"", notes:"",
     agreeTerms:false,
+    files:{},  // v3.2: { id:[File], income:[File], t2id:[File], other:[File] }
   };
 }
 
@@ -226,7 +295,71 @@ const Step3 = memo(({ f, set }) => (
   </div>
 ));
 
-const Step4 = memo(({ f, set }) => {
+const DocsStep = memo(({ f, set }) => {
+  const [err, setErr] = useState("");
+  const files = f.files || {};
+  function add(key, list) {
+    setErr("");
+    const current = files[key] || [];
+    const picked = Array.from(list || []);
+    const ok = [];
+    for (const file of picked) {
+      const imageOrPdf = isPdf(file) || /^image\//.test(file.type) || /\.(heic|heif|jpe?g|png|webp)$/i.test(file.name);
+      if (!imageOrPdf) { setErr(`"${file.name}" is not a photo or PDF, so it was skipped.`); continue; }
+      if (file.size > MAX_FILE_MB * 1048576 && isPdf(file)) { setErr(`"${file.name}" is larger than ${MAX_FILE_MB} MB. Please choose a smaller file.`); continue; }
+      ok.push(file);
+    }
+    const all = [...current, ...ok];
+    if (all.length > MAX_FILES_PER_TYPE) setErr(`You can add up to ${MAX_FILES_PER_TYPE} files here.`);
+    set("files", { ...files, [key]: all.slice(0, MAX_FILES_PER_TYPE) });
+  }
+  function remove(key, i) {
+    set("files", { ...files, [key]: (files[key] || []).filter((_, j) => j !== i) });
+  }
+  const btn = { flex:1, minWidth:130, padding:"11px 10px", borderRadius:10, border:"1.5px solid #1b2a4a", background:"#fff", color:"#1b2a4a", fontWeight:700, fontSize:14, cursor:"pointer", textAlign:"center", display:"block" };
+  return (
+    <div>
+      <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:22, color:"#1b2a4a", marginBottom:6 }}>Documents</div>
+      <div style={{ fontSize:14, color:"#64748b", lineHeight:1.6, marginBottom:18 }}>
+        Add your documents here — no need to email them. Take a photo with your phone or choose a photo or PDF you already have. They are kept private and only G&Q Properties can see them.
+      </div>
+      {docTypes(f).map(d => {
+        const list = files[d.key] || [];
+        return (
+          <div key={d.key} style={{ border:`1.5px solid ${d.req && !list.length ? "#fcd34d" : "#e2e8f0"}`, borderRadius:14, padding:"14px 16px", marginBottom:14, background: list.length ? "#f0fdf4" : "#fff" }}>
+            <div style={{ fontSize:13, fontWeight:800, color:"#1b2a4a", textTransform:"uppercase", letterSpacing:0.6 }}>
+              {list.length ? "✅ " : ""}{d.label}{d.req && <span style={{ color:"#dc2626" }}> *</span>}
+            </div>
+            <div style={{ fontSize:13, color:"#64748b", margin:"4px 0 12px", lineHeight:1.5 }}>{d.hint}</div>
+            {list.map((file, i) => (
+              <div key={i} style={{ display:"flex", alignItems:"center", gap:10, background:"#fff", border:"1px solid #e2e8f0", borderRadius:10, padding:"8px 10px", marginBottom:8 }}>
+                <span style={{ fontSize:20 }}>{isPdf(file) ? "📄" : "🖼️"}</span>
+                <span style={{ flex:1, minWidth:0, fontSize:13, color:"#1e293b", fontWeight:600, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{file.name}</span>
+                <span style={{ fontSize:12, color:"#94a3b8" }}>{fileSizeText(file.size)}</span>
+                <button type="button" onClick={() => remove(d.key, i)} aria-label={"Remove " + file.name}
+                  style={{ border:"none", background:"#fee2e2", color:"#dc2626", borderRadius:8, padding:"6px 10px", fontWeight:800, cursor:"pointer" }}>✕</button>
+              </div>
+            ))}
+            {list.length < MAX_FILES_PER_TYPE && (
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                <label style={btn}>📷 Take photo
+                  <input type="file" accept="image/*" capture="environment" style={{ display:"none" }} onChange={e => { add(d.key, e.target.files); e.target.value = ""; }} />
+                </label>
+                <label style={btn}>📁 Choose file
+                  <input type="file" accept={ACCEPT} multiple style={{ display:"none" }} onChange={e => { add(d.key, e.target.files); e.target.value = ""; }} />
+                </label>
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {err && <div style={{ color:"#dc2626", fontSize:13, fontWeight:700, marginTop:4 }}>⚠ {err}</div>}
+      <div style={{ fontSize:12, color:"#94a3b8", marginTop:6 }}>Photos (JPG, PNG, HEIC) or PDF · up to {MAX_FILE_MB} MB each · up to {MAX_FILES_PER_TYPE} files per box.</div>
+    </div>
+  );
+});
+
+const Step5 = memo(({ f, set }) => {
   const house = HOUSES.find(h=>h.id===f.houseId);
   return (
     <div>
@@ -247,8 +380,19 @@ const Step4 = memo(({ f, set }) => {
           ))}
         </div>
       ))}
-      <div style={{ background:"#fffbeb", border:"1px solid #fcd34d", borderRadius:12, padding:"14px 16px", marginBottom:14, fontSize:13, color:"#92400e" }}>
-        📎 After submitting, please email your <strong>photo ID & latest payslip</strong> to <strong>Properties.gq@gmail.com</strong> — use your name as the subject.
+      <div style={{ background:"#f8faff", borderRadius:12, padding:"14px 16px", marginBottom:14 }}>
+        <div style={{ fontSize:11, fontWeight:800, color:"#1b2a4a", textTransform:"uppercase", letterSpacing:0.6, marginBottom:8 }}>Documents</div>
+        {docTypes(f).map(d => {
+          const n = ((f.files||{})[d.key]||[]).length;
+          if (!n && !d.req) return null;
+          return (
+            <div key={d.key} style={{ display:"flex", gap:8, marginBottom:4, fontSize:13 }}>
+              <span style={{ color: n ? "#059669" : "#dc2626", fontWeight:800 }}>{n ? "✓" : "✕"}</span>
+              <span style={{ color:"#1e293b", fontWeight:600 }}>{d.label.replace(" (optional)","")}</span>
+              <span style={{ color:"#94a3b8" }}>{n ? `${n} file${n>1?"s":""}` : "missing — go back to Documents"}</span>
+            </div>
+          );
+        })}
       </div>
       <div style={{ background:"#f1f5f9", borderRadius:12, padding:"16px" }}>
         <label style={{ display:"flex", gap:12, alignItems:"flex-start", cursor:"pointer" }}>
@@ -264,7 +408,7 @@ const Step4 = memo(({ f, set }) => {
 });
 
 // ── Success screen ────────────────────────────────────────
-function SuccessScreen({ name, email, ref, house }) {
+function SuccessScreen({ name, email, ref, house, docCount }) {
   return (
     <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#1b2a4a,#2d4a6e)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"'DM Sans',sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Serif+Display&display=swap')`}</style>
@@ -272,15 +416,16 @@ function SuccessScreen({ name, email, ref, house }) {
         <div style={{ width:96, height:96, borderRadius:"50%", background:"#dcfce7", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px", fontSize:56 }}>✅</div>
         <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:30, color:"#1b2a4a", marginBottom:10 }}>Application Submitted!</div>
         <p style={{ color:"#64748b", fontSize:15, lineHeight:1.7, marginBottom:24 }}>
-          Thank you <strong style={{ color:"#1b2a4a" }}>{name}</strong>! Your application has been received and is now under review.
+          Thank you <strong style={{ color:"#1b2a4a" }}>{name}</strong>! Your application{docCount ? " and documents have" : " has"} been successfully submitted.
         </p>
         <div style={{ background:"#f0f9ff", border:"1.5px solid #bae6fd", borderRadius:16, padding:"20px", marginBottom:20, textAlign:"left", fontSize:14, lineHeight:2.2 }}>
           <div>📋 Reference: <strong style={{ fontFamily:"monospace", color:"#1b2a4a", fontSize:16 }}>{ref}</strong></div>
           <div>🏠 {house?.address || "Property to be confirmed"}</div>
+          {docCount > 0 && <div>📎 {docCount} document{docCount>1?"s":""} received</div>}
         </div>
-        <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:12, padding:"14px 18px", marginBottom:20, fontSize:13, color:"#166534", lineHeight:1.8 }}>
-          We'll contact you at <strong>{email}</strong> within 2 business days.<br/>
-          Please email your <strong>photo ID & payslip</strong> to <strong>Properties.gq@gmail.com</strong>
+        <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:12, padding:"14px 18px", marginBottom:20, fontSize:14, color:"#166534", lineHeight:1.8 }}>
+          You'll get a response from us within the next couple of days at <strong>{email}</strong>.<br/>
+          There is nothing else you need to do for now.
         </div>
         <p style={{ fontSize:12, color:"#94a3b8" }}>{COMPANY_NAME} · {COMPANY_PHONE} · {COMPANY_EMAIL}</p>
       </div>
@@ -294,41 +439,77 @@ export default function ApplicationForm() {
   const [form, setForm] = useState(empty());
   const [done, setDone] = useState(false);
   const [ref,  setRef]  = useState("");
+  const [busy, setBusy] = useState("");   // v3.2: progress text while submitting
+  const [error, setError] = useState("");
+  const appIdRef = useRef(Date.now().toString());   // stays the same if they press Submit again
+  const uploadedRef = useRef({});                   // files already uploaded on an earlier try
 
   const set  = useCallback((k, v) => setForm(f => ({...f, [k]:v})), []);
-  const next = useCallback(() => setStep(s => Math.min(s+1, STEPS.length-1)), []);
-  const back = useCallback(() => setStep(s => Math.max(s-1, 0)), []);
+  const next = useCallback(() => { setStep(s => Math.min(s+1, STEPS.length-1)); window.scrollTo(0, 0); }, []);
+  const back = useCallback(() => { setStep(s => Math.max(s-1, 0)); window.scrollTo(0, 0); }, []);
+
+  const docsMissing = missingDocs(form);
+  const canSubmit = !!form.t1name && form.agreeTerms && docsMissing.length === 0 && !busy;
 
   async function submit() {
-    if (!form.t1name || !form.agreeTerms) return;
-    const refNum  = "GQ-" + Date.now().toString().slice(-6);
+    if (!canSubmit) return;
+    setError("");
+    const appId = appIdRef.current;
+    const refNum  = "GQ-" + appId.slice(-6);
     const house   = HOUSES.find(h => h.id === form.houseId);
-    const newApp  = {
-      ...form,
-      houseAddress: house?.address || "",
-      id:           Date.now().toString(),
-      ref:          refNum,
-      submittedAt:  new Date().toLocaleDateString("en-AU"),
-      submittedTime:new Date().toLocaleTimeString("en-AU"),
-      status:       "pending",
-      rentOffered:  "",
-      source:       "online-form",
-    };
-    // Save to Supabase — visible to all users on any device instantly
     try {
+      // 1. Upload the documents (photos are shrunk first)
+      const types = docTypes(form);
+      const todo = [];
+      for (const d of types) (form.files[d.key] || []).forEach((file, i) => todo.push({ d, file, i }));
+      const documents = [];
+      for (let n = 0; n < todo.length; n++) {
+        const { d, file, i } = todo[n];
+        setBusy(`Uploading document ${n+1} of ${todo.length}…`);
+        const k = d.key + "|" + i + "|" + file.name + "|" + file.size;
+        let rec = uploadedRef.current[k];
+        if (!rec) {
+          const blob = await shrinkImage(file);
+          const name = `${d.key}-${i+1}-${safeFileName(blob.name || file.name)}`;
+          const path = `${appId}/${name}`;
+          const type = blob.type || (isPdf(file) ? "application/pdf" : "image/jpeg");
+          await sbUploadDoc(path, blob, type);
+          rec = { type: d.key, label: d.label.replace(" (optional)",""), name: file.name, path, size: blob.size, contentType: type };
+          uploadedRef.current[k] = rec;
+        }
+        documents.push(rec);
+      }
+      // 2. Save the application
+      setBusy("Sending your application…");
+      const { files, ...fields } = form;
+      const newApp  = {
+        ...fields,
+        documents,
+        houseAddress: house?.address || "",
+        id:           appId,
+        ref:          refNum,
+        submittedAt:  new Date().toLocaleDateString("en-AU"),
+        submittedTime:new Date().toLocaleTimeString("en-AU"),
+        status:       "pending",
+        rentOffered:  "",
+        source:       "online-form",
+      };
       await sbUpsertApp(newApp);
+      setRef(refNum);
+      setBusy("");
+      setDone(true);
+      window.scrollTo(0, 0);
     } catch (e) {
-      // Fallback: save to localStorage if Supabase fails
-      console.warn("Supabase save failed, using localStorage:", e.message);
-      saveApplication(newApp);
+      console.warn("Submit failed:", e);
+      setBusy("");
+      setError("Sorry, your application could not be sent. Please check your internet connection and tap Submit Application again. If it still doesn't work, call us on " + COMPANY_PHONE + ".");
     }
-    setRef(refNum);
-    setDone(true);
   }
 
   if (done) {
     const house = HOUSES.find(h => h.id === form.houseId);
-    return <SuccessScreen name={form.t1name} email={form.t1email} ref={ref} house={house} />;
+    const docCount = Object.values(form.files || {}).reduce((n, l) => n + l.length, 0);
+    return <SuccessScreen name={form.t1name} email={form.t1email} ref={ref} house={house} docCount={docCount} />;
   }
 
   return (
@@ -360,7 +541,8 @@ export default function ApplicationForm() {
           {step === 1 && <Step1 f={form} set={set} />}
           {step === 2 && <Step2 f={form} set={set} />}
           {step === 3 && <Step3 f={form} set={set} />}
-          {step === 4 && <Step4 f={form} set={set} />}
+          {step === 4 && <DocsStep f={form} set={set} />}
+          {step === 5 && <Step5 f={form} set={set} />}
 
           {/* Nav */}
           <div style={{ display:"flex", gap:10, marginTop:24, paddingTop:18, borderTop:"1px solid #f1f5f9", alignItems:"center" }}>
@@ -372,17 +554,24 @@ export default function ApplicationForm() {
             )}
             <div style={{ flex:1 }} />
             {step < STEPS.length-1 ? (
-              <button type="button" onClick={next}
-                style={{ padding:"13px 32px", borderRadius:10, border:"none", background:"#1b2a4a", color:"#fff", fontWeight:800, fontSize:15, cursor:"pointer", boxShadow:"0 4px 14px rgba(27,42,74,0.3)" }}>
+              <button type="button" onClick={next} disabled={step === 4 && docsMissing.length > 0}
+                style={{ padding:"13px 32px", borderRadius:10, border:"none", background: step === 4 && docsMissing.length > 0 ? "#94a3b8" : "#1b2a4a", color:"#fff", fontWeight:800, fontSize:15, cursor: step === 4 && docsMissing.length > 0 ? "not-allowed" : "pointer", boxShadow:"0 4px 14px rgba(27,42,74,0.3)" }}>
                 Continue →
               </button>
             ) : (
-              <button type="button" onClick={submit} disabled={!form.t1name || !form.agreeTerms}
-                style={{ padding:"13px 32px", borderRadius:10, border:"none", background:form.t1name&&form.agreeTerms?"#059669":"#94a3b8", color:"#fff", fontWeight:800, fontSize:15, cursor:form.t1name&&form.agreeTerms?"pointer":"not-allowed" }}>
-                ✓ Submit Application
+              <button type="button" onClick={submit} disabled={!canSubmit}
+                style={{ padding:"13px 32px", borderRadius:10, border:"none", background:canSubmit?"#059669":"#94a3b8", color:"#fff", fontWeight:800, fontSize:15, cursor:canSubmit?"pointer":"not-allowed" }}>
+                {busy ? "Please wait…" : "✓ Submit Application"}
               </button>
             )}
           </div>
+          {step === 4 && docsMissing.length > 0 && (
+            <div style={{ marginTop:10, fontSize:13, color:"#92400e", textAlign:"right" }}>
+              Please add: {docsMissing.map(d => d.label).join(", ")}
+            </div>
+          )}
+          {busy && <div style={{ marginTop:12, fontSize:14, color:"#1b2a4a", fontWeight:700, textAlign:"center" }}>⏳ {busy} Please keep this page open.</div>}
+          {error && <div style={{ marginTop:12, background:"#fef2f2", border:"1px solid #fecaca", borderRadius:10, padding:"12px 14px", fontSize:13, color:"#b91c1c", fontWeight:600 }}>⚠ {error}</div>}
         </div>
 
         <div style={{ textAlign:"center", marginTop:18, fontSize:11, color:"rgba(255,255,255,0.4)" }}>
