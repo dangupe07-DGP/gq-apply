@@ -31,7 +31,7 @@ async function sbUpsertApp(app) {
       "apikey": SB_KEY,
       "Authorization": "Bearer " + SB_KEY,
       "Content-Type": "application/json",
-      "Prefer": "resolution=merge-duplicates,return=minimal"
+      "Prefer": "return=minimal"  // v3.1: plain insert – the database only allows NEW applications from this public form
     },
     body: JSON.stringify({ id:app.id, data:app, status:"pending" })
   });
