@@ -1,6 +1,7 @@
 // ============================================================
 // G&Q Properties - Room Application Form
-// VERSION 3.2  —  Saved: 10 October 2026
+// VERSION 3.3  —  Saved: 10 October 2026
+// Version history: see src/Changelog.jsx (shown in the app via the 📋 button).
 // v3.2: applicants upload their documents (photo ID, proof of income…) in
 //       the form itself (new 'Documents' step). Files go to the private
 //       Supabase storage bucket 'application-docs' (only G&Q staff can open them).
@@ -23,6 +24,7 @@
 //  • Company branding with logo upload
 //  • 3-row navy header (G&Q navy/gold theme)
 // ============================================================
+import { VersionBadge } from "./Changelog.jsx";
 import { useState, useCallback, memo, useEffect, useRef } from "react";
 // ── Supabase v3.0 ─────────────────────────────────────────
 const SB_URL = "https://nxkndyiifyptwhvqljqy.supabase.co";
@@ -524,6 +526,7 @@ export default function ApplicationForm() {
             <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:18, color:"#fff" }}>G&Q Properties</div>
             <div style={{ fontSize:10, color:"#b8973a", fontWeight:800, letterSpacing:1 }}>ROOM APPLICATION FORM</div>
           </div>
+          <VersionBadge />
         </div>
 
         {/* Progress */}
