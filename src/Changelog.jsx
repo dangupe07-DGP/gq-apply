@@ -4,6 +4,11 @@ import { useState } from "react";
 
 export const CHANGELOG = [
   {
+    version: "3.4",
+    date: "2026-11-08",
+    changes: ["Fixed-term contracts: the End Date fills in automatically as 6 months from the move-in date, and can no longer be set before the move-in date."],
+  },
+  {
     version: "3.3",
     date: "2026-10-10",
     changes: ["Version number shown at the top of the form; tap it to see this version history."],
