@@ -4,6 +4,11 @@ import { useState } from "react";
 
 export const CHANGELOG = [
   {
+    version: "3.7",
+    date: "2026-11-09",
+    changes: ["Review & Submit: the Room Request summary now shows the End of contract date (fixed-term contracts)."],
+  },
+  {
     version: "3.6",
     date: "2026-11-09",
     changes: ["End Date can only be after the move-in date – also on iPhones, whose date wheel ignored the limit. An earlier date is refused with a red message and the previous date is put back. The End Date box is greyed out until the move-in date is chosen."],

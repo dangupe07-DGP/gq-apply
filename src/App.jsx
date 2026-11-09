@@ -379,7 +379,7 @@ const Step5 = memo(({ f, set }) => {
       {[
         { title:"Applicant", rows:[["Name",f.t1name],["Phone",f.t1phone],["Email",f.t1email],["DOB",f.t1dob],["Address",f.t1address],["ID",`${f.t1idType} ${f.t1idNumber}`],["Emergency",`${f.t1emergency} (${f.t1emergencyRelation}) ${f.t1emergencyPhone}`]] },
         f.hasT2 && { title:"Co-Tenant", rows:[["Name",f.t2name],["Phone",f.t2phone],["Email",f.t2email]] },
-        { title:"Room Request", rows:[["House",house?.address||"—"],["Room",f.roomNum?`Room ${f.roomNum}`:"No preference"],["Car Park",f.carParkRequested==="outside"?"Outside Car Park (no extra cost)":"Undercover Car Park (extra cost)"],["Move-In",f.startDate?new Date(f.startDate+"T00:00:00").toLocaleDateString("en-AU"):"TBD"],["Contract",f.contractType==="fixed"?"Fixed Term":"Periodic"],["Pets",f.pets],["Smoker",f.smoker]] },
+        { title:"Room Request", rows:[["House",house?.address||"—"],["Room",f.roomNum?`Room ${f.roomNum}`:"No preference"],["Car Park",f.carParkRequested==="outside"?"Outside Car Park (no extra cost)":"Undercover Car Park (extra cost)"],["Move-In",f.startDate?new Date(f.startDate+"T00:00:00").toLocaleDateString("en-AU"):"TBD"],["Contract",f.contractType==="fixed"?"Fixed Term":"Periodic"],...(f.contractType==="fixed"?[["End of contract",f.startDate?auDate(effectiveEndDate(f.startDate,f.endDate)):"TBD"]]:[]),["Pets",f.pets],["Smoker",f.smoker]] },
         { title:"Employment", rows:[["Employer",f.t1employer],["Type",f.t1employmentType],["Income/wk",f.t1income?`$${f.t1income}`:""]] },
       ].filter(Boolean).map(s=>(
         <div key={s.title} style={{ background:"#f8faff", borderRadius:12, padding:"14px 16px", marginBottom:12 }}>
