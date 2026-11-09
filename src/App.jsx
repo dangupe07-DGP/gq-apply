@@ -26,7 +26,7 @@
 // ============================================================
 import { VersionBadge } from "./Changelog.jsx";
 import { effectiveEndDate, endAfterStartChange } from "./contractDates.js";
-import { useState, useCallback, memo, useEffect, useRef } from "react";
+import { useState, useCallback, memo, useEffect, useRef, Component } from "react";
 // ── Supabase v3.0 ─────────────────────────────────────────
 const SB_URL = "https://nxkndyiifyptwhvqljqy.supabase.co";
 const SB_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im54a25keWlpZnlwdHdodnFsanF5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA1NzUxNzYsImV4cCI6MjA5NjE1MTE3Nn0.pmg7SxeI0617dteBq3Hk8mDSbyMHSPbLAZKpoGIZcjo";
@@ -411,7 +411,28 @@ const Step5 = memo(({ f, set }) => {
 });
 
 // ── Success screen ────────────────────────────────────────
-function SuccessScreen({ name, email, ref, house, docCount }) {
+// v3.5: the reference used to be passed as "ref", which React keeps for itself – the screen crashed and went blank
+// after submitting (the application WAS saved). Now "refNum", and a safety net shows a simple message if anything fails.
+class SuccessSafety extends Component {
+  constructor(p) { super(p); this.state = { failed: false }; }
+  static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch(e) { console.warn("Success screen:", e); }
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div style={{ minHeight:"100vh", display:"flex", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"sans-serif", textAlign:"center", background:"#1b2a4a" }}>
+        <div style={{ background:"#fff", borderRadius:20, padding:"36px 28px", maxWidth:440 }}>
+          <div style={{ fontSize:48 }}>✅</div>
+          <h2 style={{ color:"#1b2a4a" }}>Application submitted</h2>
+          <p style={{ color:"#475569", lineHeight:1.7 }}>Thank you! We have received your application and it will be reviewed shortly. We'll contact you by email within the next couple of days. There is nothing else you need to do.</p>
+          <p style={{ fontSize:12, color:"#94a3b8" }}>{COMPANY_NAME} · {COMPANY_PHONE}</p>
+        </div>
+      </div>
+    );
+  }
+}
+
+function SuccessScreen({ name, email, refNum, house, docCount }) {
   return (
     <div style={{ minHeight:"100vh", background:"linear-gradient(135deg,#1b2a4a,#2d4a6e)", display:"flex", alignItems:"center", justifyContent:"center", padding:24, fontFamily:"'DM Sans',sans-serif" }}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;600;700;800&family=DM+Serif+Display&display=swap')`}</style>
@@ -419,16 +440,16 @@ function SuccessScreen({ name, email, ref, house, docCount }) {
         <div style={{ width:96, height:96, borderRadius:"50%", background:"#dcfce7", display:"flex", alignItems:"center", justifyContent:"center", margin:"0 auto 20px", fontSize:56 }}>✅</div>
         <div style={{ fontFamily:"'DM Serif Display',serif", fontSize:30, color:"#1b2a4a", marginBottom:10 }}>Application Submitted!</div>
         <p style={{ color:"#64748b", fontSize:15, lineHeight:1.7, marginBottom:24 }}>
-          Thank you <strong style={{ color:"#1b2a4a" }}>{name}</strong>! Your application{docCount ? " and documents have" : " has"} been successfully submitted.
+          Thank you <strong style={{ color:"#1b2a4a" }}>{name}</strong>! Your application{docCount ? " and documents have" : " has"} been successfully submitted and will be reviewed shortly.
         </p>
         <div style={{ background:"#f0f9ff", border:"1.5px solid #bae6fd", borderRadius:16, padding:"20px", marginBottom:20, textAlign:"left", fontSize:14, lineHeight:2.2 }}>
-          <div>📋 Reference: <strong style={{ fontFamily:"monospace", color:"#1b2a4a", fontSize:16 }}>{ref}</strong></div>
+          <div>📋 Reference: <strong style={{ fontFamily:"monospace", color:"#1b2a4a", fontSize:16 }}>{refNum}</strong></div>
           <div>🏠 {house?.address || "Property to be confirmed"}</div>
           {docCount > 0 && <div>📎 {docCount} document{docCount>1?"s":""} received</div>}
         </div>
         <div style={{ background:"#f0fdf4", border:"1px solid #86efac", borderRadius:12, padding:"14px 18px", marginBottom:20, fontSize:14, color:"#166534", lineHeight:1.8 }}>
-          You'll get a response from us within the next couple of days at <strong>{email}</strong>.<br/>
-          There is nothing else you need to do for now.
+          We'll review your application shortly and reply within the next couple of days at <strong>{email}</strong>.<br/>
+          There is nothing else you need to do for now – please don't submit it again.
         </div>
         <p style={{ fontSize:12, color:"#94a3b8" }}>{COMPANY_NAME} · {COMPANY_PHONE} · {COMPANY_EMAIL}</p>
       </div>
@@ -513,7 +534,7 @@ export default function ApplicationForm() {
   if (done) {
     const house = HOUSES.find(h => h.id === form.houseId);
     const docCount = Object.values(form.files || {}).reduce((n, l) => n + l.length, 0);
-    return <SuccessScreen name={form.t1name} email={form.t1email} ref={ref} house={house} docCount={docCount} />;
+    return <SuccessSafety><SuccessScreen name={form.t1name} email={form.t1email} refNum={ref} house={house} docCount={docCount} /></SuccessSafety>;
   }
 
   return (
