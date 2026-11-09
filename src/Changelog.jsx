@@ -4,6 +4,11 @@ import { useState } from "react";
 
 export const CHANGELOG = [
   {
+    version: "3.6",
+    date: "2026-11-09",
+    changes: ["End Date can only be after the move-in date – also on iPhones, whose date wheel ignored the limit. An earlier date is refused with a red message and the previous date is put back. The End Date box is greyed out until the move-in date is chosen."],
+  },
+  {
     version: "3.5",
     date: "2026-11-09",
     changes: ["Fixed: after tapping Submit, the screen went blank on some phones (the application was saved, but no message showed). Now a confirmation shows: “Application Submitted! … will be reviewed shortly”, with the reference number."],

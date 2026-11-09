@@ -25,7 +25,9 @@
 //  • 3-row navy header (G&Q navy/gold theme)
 // ============================================================
 import { VersionBadge } from "./Changelog.jsx";
-import { effectiveEndDate, endAfterStartChange } from "./contractDates.js";
+import { effectiveEndDate, endAfterStartChange, isEndDateValid, defaultEndDate } from "./contractDates.js";
+const auDate = (iso) => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[3] + "/" + m[2] + "/" + m[1] : ""; };
+const addOneDay = (iso) => { const d = new Date(iso + "T00:00:00Z"); d.setUTCDate(d.getUTCDate() + 1); return isNaN(d) ? undefined : d.toISOString().slice(0, 10); };
 import { useState, useCallback, memo, useEffect, useRef, Component } from "react";
 // ── Supabase v3.0 ─────────────────────────────────────────
 const SB_URL = "https://nxkndyiifyptwhvqljqy.supabase.co";
@@ -267,7 +269,14 @@ const Step2 = memo(({ f, set }) => (
       <FL label="Contract Type"><select style={inp} value={f.contractType} onChange={e=>set("contractType",e.target.value)}><option value="fixed">Fixed Term</option><option value="periodic">Periodic</option></select></FL>
       <div/>
       <FL label="Move-In Date" req><input style={inp} type="date" value={f.startDate} onChange={e=>set("startDate",e.target.value)} /></FL>
-      {f.contractType==="fixed" && <FL label="End Date"><input style={inp} type="date" min={f.startDate || undefined} value={f.endDate} onChange={e=>set("endDate",e.target.value)} /><div style={{ fontSize:11, color:"#888", marginTop:4 }}>6 months from your move-in date. Change it only if agreed with G&Q.</div></FL>}
+      {f.contractType==="fixed" && <FL label="End Date">
+        {/* v3.6: iPhones ignore "min" in the date wheel, so an end date on/before the move-in date is refused in set() */}
+        <input style={{ ...inp, ...(f.startDate ? {} : { background:"#f1f5f9", color:"#94a3b8" }), ...(f.endWarn ? { borderColor:"#dc2626" } : {}) }} type="date" disabled={!f.startDate}
+          min={f.startDate ? addOneDay(f.startDate) : undefined} value={f.endDate} onChange={e=>set("endDate",e.target.value)} />
+        {f.endWarn
+          ? <div style={{ fontSize:12, color:"#b91c1c", fontWeight:700, marginTop:4 }}>⚠ {f.endWarn}</div>
+          : <div style={{ fontSize:11, color:"#888", marginTop:4 }}>{f.startDate ? "Must be after your move-in date. 6 months from your move-in date – change it only if agreed with G&Q." : "Choose your move-in date first."}</div>}
+      </FL>}
       <FL label="Pets?"><select style={inp} value={f.pets} onChange={e=>set("pets",e.target.value)}><option>None</option><option>1 cat</option><option>1 dog</option><option>Multiple pets</option><option>Other</option></select></FL>
       <FL label="Smoker?"><select style={inp} value={f.smoker} onChange={e=>set("smoker",e.target.value)}><option>No</option><option>Yes (outdoors only)</option><option>Yes</option></select></FL>
     </div>
@@ -468,7 +477,18 @@ export default function ApplicationForm() {
   const appIdRef = useRef(Date.now().toString());   // stays the same if they press Submit again
   const uploadedRef = useRef({});                   // files already uploaded on an earlier try
 
-  const set  = useCallback((k, v) => setForm(f => k === "startDate" ? ({...f, startDate:v, endDate:endAfterStartChange(f.startDate, v, f.endDate)}) : ({...f, [k]:v})), []); // v3.4: end date = 6 months unless changed
+  const set  = useCallback((k, v) => setForm(f => {
+    if (k === "startDate") return {...f, startDate:v, endDate:endAfterStartChange(f.startDate, v, f.endDate), endWarn:""}; // v3.4: end date = 6 months unless changed
+    if (k === "endDate") {
+      // v3.6: the end date must be AFTER the move-in date – an earlier (or same) date is refused, the previous good date is kept
+      if (v && f.startDate && !isEndDateValid(f.startDate, v)) {
+        const keep = isEndDateValid(f.startDate, f.endDate) ? f.endDate : defaultEndDate(f.startDate);
+        return {...f, endDate:keep, endWarn:"The end date must be after your move-in date (" + auDate(f.startDate) + "). We've put back " + auDate(keep) + "."};
+      }
+      return {...f, endDate:v, endWarn:""};
+    }
+    return {...f, [k]:v};
+  }), []);
   const next = useCallback(() => { setStep(s => Math.min(s+1, STEPS.length-1)); window.scrollTo(0, 0); }, []);
   const back = useCallback(() => { setStep(s => Math.max(s-1, 0)); window.scrollTo(0, 0); }, []);
 
@@ -505,7 +525,7 @@ export default function ApplicationForm() {
       }
       // 2. Save the application
       setBusy("Sending your application…");
-      const { files, ...fields } = form;
+      const { files, endWarn, ...fields } = form;
       const newApp  = {
         ...fields,
         endDate: fields.contractType === "fixed" ? effectiveEndDate(fields.startDate, fields.endDate) : fields.endDate,
