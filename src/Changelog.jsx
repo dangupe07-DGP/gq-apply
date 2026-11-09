@@ -4,6 +4,11 @@ import { useState } from "react";
 
 export const CHANGELOG = [
   {
+    version: "3.5",
+    date: "2026-11-09",
+    changes: ["Fixed: after tapping Submit, the screen went blank on some phones (the application was saved, but no message showed). Now a confirmation shows: “Application Submitted! … will be reviewed shortly”, with the reference number."],
+  },
+  {
     version: "3.4",
     date: "2026-11-08",
     changes: ["Fixed-term contracts: the End Date fills in automatically as 6 months from the move-in date, and can no longer be set before the move-in date."],
